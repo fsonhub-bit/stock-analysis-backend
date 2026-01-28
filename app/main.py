@@ -39,8 +39,18 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
         discord_content = notifier.format_discord_message(results, macro_sentiment)
         background_tasks.add_task(notifier.send_notification, discord_content)
 
+    # Format Response
+    macro_response = {}
+    if macro_sentiment:
+        summary = macro_sentiment.get("reason_summary", "")
+        sectors = {k: v for k, v in macro_sentiment.items() if k != "reason_summary"}
+        macro_response = {
+            "summary": summary,
+            "sectors": sectors
+        }
+
     return {
-        "status": "success", 
-        "analyzed_count": len(results),
-        "macro_summary": macro_sentiment
+        "status": "success",
+        "macro": macro_response,
+        "stocks": results
     }
