@@ -23,22 +23,8 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
         if df.empty:
             continue
             
-        # 2. Analyze
-        rsi_series = analysis.calculate_rsi(df, period=config.RSI_PERIOD)
-        if rsi_series.empty:
-            continue
-            
-        current_rsi = rsi_series.iloc[-1]
-        signal = analysis.judge_signal(current_rsi)
-        current_price = df['Close'].iloc[-1]
-        
-        result = AnalysisResult(
-            ticker=ticker,
-            current_price=float(current_price),
-            rsi=float(current_rsi),
-            signal=signal,
-            timestamp=df.index[-1]
-        )
+        # 2. Analyze (Integrated Logic)
+        result = analysis.analyze_ticker(ticker, df)
         results.append(result)
 
     # 3. Notify (only if there are results)

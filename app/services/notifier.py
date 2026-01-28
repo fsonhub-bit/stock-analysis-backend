@@ -6,7 +6,7 @@ from app.config import config
 
 def format_discord_message(results: List[AnalysisResult]) -> Dict[str, Any]:
     """
-    Format analysis results into a Discord embed message.
+    Format analysis results into a Discord embed message with S-Stock details.
     """
     embeds = []
     
@@ -15,28 +15,32 @@ def format_discord_message(results: List[AnalysisResult]) -> Dict[str, Any]:
         title_prefix = ""
         
         if res.signal == "BUY":
-            color = 0xFF0000 # Red (often associated with 'hot' or 'action' in trading contexts, or Green? 
-            # In Japanese context, Red often means price up/gain, Green means down. 
-            # But for "Signal", usually Red/Green is standard.
-            # Let's use Red for BUY as requested "Red text or bold for BUY signal" in prompt.
             color = 0xE74C3C # Red
             title_prefix = "🚨 ALERT: "
         elif res.signal == "SELL":
             color = 0x2ECC71 # Green
         
+        # Build description with S-Stock specific fields
+        description = (
+            f"**Price:** {res.current_price:,.1f}\n"
+            f"**Analysis Reason:**\n{res.reason}\n\n"
+            f"**Technical Indicators:**\n"
+            f"- RSI: {res.rsi:.1f}\n"
+            f"- ATR (14): {res.atr:.1f}\n"
+            f"- Target Price (+2σ): {res.target_price:,.1f}\n"
+            f"- Upside: {res.upside_ratio:.1f}x ATR"
+        )
+
         embed = {
             "title": f"{title_prefix}{res.ticker} Signal: {res.signal}",
+            "description": description,
             "color": color,
-            "fields": [
-                {"name": "Price", "value": f"{res.current_price:,.1f}", "inline": True},
-                {"name": "RSI", "value": f"{res.rsi:.2f}", "inline": True},
-                {"name": "Time", "value": res.timestamp.strftime("%Y-%m-%d"), "inline": True}
-            ]
+            "footer": {"text": f"Time: {res.timestamp.strftime('%Y-%m-%d %H:%M')}"}
         }
         embeds.append(embed)
 
     return {
-        "content": f"Stock Analysis Report ({len(results)} items)",
+        "content": f"S-Stock Analysis Report ({len(results)} items)",
         "embeds": embeds
     }
 

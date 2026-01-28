@@ -2,7 +2,7 @@
 import yfinance as yf
 import pandas as pd
 
-def fetch_historical_data(ticker: str, period: str = "3mo") -> pd.DataFrame:
+def fetch_historical_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
     """
     Fetch historical data for a given ticker using yfinance.
     """
