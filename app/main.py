@@ -2,6 +2,7 @@
 from fastapi import FastAPI, BackgroundTasks
 from app.config import config
 from app.services import market_data, analysis, notifier
+from app.services.macro import macro_analyzer
 from app.models import AnalysisResult
 
 app = FastAPI(title="S-Stock Analysis Backend")
@@ -15,6 +16,12 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
     """
     Trigger stock analysis and notification.
     """
+    # 0. Macro Analysis
+    print("Fetching Macro Data...")
+    headlines = macro_analyzer.fetch_news_headlines()
+    macro_sentiment = macro_analyzer.analyze_sentiment(headlines)
+    print(f"Macro Sentiment: {macro_sentiment}")
+
     results = []
     
     for ticker in config.TARGET_TICKERS:
@@ -29,15 +36,11 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
 
     # 3. Notify (only if there are results)
     if results:
-        discord_content = notifier.format_discord_message(results)
-        # Send notification in background to check pydantic/async compatibility
-        # But notifier.send_notification is async, so we can await it or use background_tasks.
-        # Since this endpoint is async, we can await it directly or use a background wrapper.
-        # For simplicity and immediacy in this prototype, let's await it.
-        # If latency becomes an issue, we can use background_tasks.add_task(notifier.send_notification, discord_content)
-        # However, send_notification is async defined, so standard background_tasks might need a wrapper or run_in_executor if it was sync.
-        # Since it is async def, background_tasks.add_task works fine with it in FastAPI.
-        
+        discord_content = notifier.format_discord_message(results, macro_sentiment)
         background_tasks.add_task(notifier.send_notification, discord_content)
 
-    return {"status": "success", "analyzed_count": len(results)}
+    return {
+        "status": "success", 
+        "analyzed_count": len(results),
+        "macro_summary": macro_sentiment
+    }
