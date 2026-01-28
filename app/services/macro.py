@@ -34,34 +34,53 @@ class MacroAnalyzer:
         
         return "\n".join(headlines)
 
-    def analyze_sentiment(self, headlines: str) -> Dict[str, Any]:
+    def analyze_sentiment(self, headlines: str, global_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze sentiment for sectors based on headlines using Gemini.
+        Analyze sentiment for sectors based on headlines and global market data using Gemini.
         Returns a dictionary like {"自動車": -2, "半導体": +4, "全体": +1, "reason": "..."}
         """
-        if not self.model or not headlines:
-            print("Gemini API Key missing or no headlines.")
-            return {"全体": 0, "reason": "API Key未設定またはニュース取得失敗"}
+        if not self.model:
+            print("Gemini API Key missing.")
+            return {"全体": 0, "reason_summary": "API Key未設定"}
+
+        # Format global data
+        global_text = "\n".join([
+            f"- {name}: {d['price']:.2f} (前日比 {d['change_pct']:.2f}%)"
+            for name, d in global_data.items()
+        ])
 
         sectors = list(set(config.TICKER_SECTOR_MAP.values()))
         sectors_str = ", ".join(sectors)
         
         prompt = f"""
-        あなたはプロの株式ストラテジストです。
-        以下の最新ニュース見出しを分析し、以下のセクターおよび市場全体に対する投資家のセンチメントを -5(非常に悲観) 〜 +5(非常に楽観) の整数で採点してください。
-        
+        あなたは百戦錬磨の日本株ストラテジストです。以下の情報を元に、
+        「今日の日本株市場における各セクターのセンチメント」を -5(超悲観)〜+5(超楽観) で判定してください。
+
+        【重要：判断の重み付け】
+        1. **米国株・為替動向 (Weight: 70%)**: 日本株は米国市場と為替に強く連動します。
+           - SOX指数が上昇 → 日本の半導体セクターは「買い (+3以上)」
+           - NASDAQが上昇 → 日本のハイテク・グロースは「買い」
+           - ドル円が円安(数値上昇) → 輸出関連(自動車など)は「買い」、円高なら「売り」
+        2. **国内ニュース (Weight: 30%)**: 個別の好悪材料を加味してください。
+
+        【入力データ】
+        == 米国市場・為替 (最重要) ==
+        {global_text}
+
+        == 国内主要ニュース ==
+        {headlines}
+
+        【出力フォーマット】
+        JSON形式で出力してください。理由は簡潔に。「全体」は市場全体の地合いです。
         対象セクター: [{sectors_str}, 全体]
         
-        ニュース:
-        {headlines}
-        
-        出力フォーマット(JSONのみ):
+        Example JSON:
         {{
-            "自動車・輸送機": 0,
+            "自動車・輸送機": 3,
+            "半導体・ハイテク": -2,
             "銀行・金融": 0,
-            "通信・投資": 0,
-            "全体": 0,
-            "reason_summary": "市場全体の雰囲気を表す短い要約コメント(50文字以内)"
+            "全体": 1,
+            "reason_summary": "SOX指数の急落を受け半導体は厳しいが、円安進行により自動車は堅調。(50文字以内)"
         }}
         """
         

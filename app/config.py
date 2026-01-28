@@ -23,6 +23,15 @@ class Config:
         "9984.T": "通信・投資",
     }
 
+    # Global Indicators
+    GLOBAL_TICKERS = {
+        "^GSPC": "S&P 500",
+        "^IXIC": "NASDAQ Composite",
+        "^SOX": "PHLX Semiconductor (SOX)", 
+        "JPY=X": "USD/JPY"
+    }
+    GLOBAL_DATA_PERIOD = "5d"
+
     RSI_PERIOD = 14
     RSI_OVERBOUGHT = 70
     RSI_OVERSOLD = 30

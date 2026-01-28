@@ -17,9 +17,15 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
     Trigger stock analysis and notification.
     """
     # 0. Macro Analysis
-    print("Fetching Macro Data...")
+    print("Fetching Global Market Data...")
+    global_data = market_data.fetch_global_market_data()
+    print(f"Global Data: {global_data.keys()}")
+
+    print("Fetching News Headlines...")
     headlines = macro_analyzer.fetch_news_headlines()
-    macro_sentiment = macro_analyzer.analyze_sentiment(headlines)
+    
+    print("Running Weighted Sentiment Analysis...")
+    macro_sentiment = macro_analyzer.analyze_sentiment(headlines, global_data)
     print(f"Macro Sentiment: {macro_sentiment}")
 
     results = []
@@ -52,5 +58,6 @@ async def analyze_s_stocks(background_tasks: BackgroundTasks):
     return {
         "status": "success",
         "macro": macro_response,
-        "stocks": results
+        "stocks": results,
+        "global_data": global_data
     }
