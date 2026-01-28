@@ -1,0 +1,18 @@
+name: Daily Stock Analysis Trigger
+
+on:
+  # 1. 定期実行 (日本時間 17:00 = UTC 8:00)
+  schedule:
+    - cron: "0 8 * * *"
+
+  # 2. Github画面から手動実行ボタンを押せるようにする
+  workflow_dispatch:
+
+jobs:
+  wake-up-and-analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Render API
+        run: |
+          # タイムアウト時間を長めに設定してPOST送信 (Renderのスピンアップ待ち対策)
+          curl -X POST "${{ secrets.API_ENDPOINT }}" --max-time 300
