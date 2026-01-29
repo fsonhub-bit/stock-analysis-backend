@@ -1,18 +1,32 @@
-name: Daily Stock Analysis Trigger
+name: Daily Stock Analysis Batch
 
 on:
-  # 1. 定期実行 (日本時間 17:00 = UTC 8:00)
   schedule:
-    - cron: "0 8 * * *"
-
-  # 2. Github画面から手動実行ボタンを押せるようにする
+    # JST 09:00 (UTC 00:00) に実行
+    - cron: "0 23 * * *"
   workflow_dispatch:
 
 jobs:
-  wake-up-and-analyze:
+  run-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # 全銘柄処理用に長めに確保
+
     steps:
-      - name: Call Render API
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
         run: |
-          # タイムアウト時間を長めに設定してPOST送信 (Renderのスピンアップ待ち対策)
-          curl -X POST "${{ secrets.API_ENDPOINT }}" --max-time 300
+          pip install -r requirements.txt
+
+      - name: Run Daily Analysis
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python batch_jobs/daily_analysis_all.py

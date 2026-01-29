@@ -1,63 +1,73 @@
 
-from fastapi import FastAPI, BackgroundTasks
-from app.config import config
-from app.services import market_data, analysis, notifier
-from app.services.macro import macro_analyzer
-from app.models import AnalysisResult
+from fastapi import FastAPI, HTTPException, Query
+from services.db_client import supabase
+from datetime import date
+from typing import Optional
 
-app = FastAPI(title="S-Stock Analysis Backend")
+app = FastAPI(title="S-Stock AI Analyst API")
 
 @app.get("/")
 def read_root():
-    return {"message": "S-Stock Analysis Backend is running"}
+    return {"message": "S-Stock AI Analyst API (Read-Only) is running"}
 
-@app.post("/api/analyze")
-async def analyze_s_stocks(background_tasks: BackgroundTasks):
+@app.get("/api/stocks/recommendations")
+def get_recommendations(
+    target_date: Optional[str] = None
+):
     """
-    Trigger stock analysis and notification.
+    Get recommended stocks (BUY signal) for a specific date (default: today).
     """
-    # 0. Macro Analysis
-    print("Fetching Global Market Data...")
-    global_data = market_data.fetch_global_market_data()
-    print(f"Global Data: {global_data.keys()}")
-
-    print("Fetching News Headlines...")
-    headlines = macro_analyzer.fetch_news_headlines()
-    
-    print("Running Weighted Sentiment Analysis...")
-    macro_sentiment = macro_analyzer.analyze_sentiment(headlines, global_data)
-    print(f"Macro Sentiment: {macro_sentiment}")
-
-    results = []
-    
-    for ticker in config.TARGET_TICKERS:
-        # 1. Fetch Data
-        df = market_data.fetch_historical_data(ticker)
-        if df.empty:
-            continue
+    if not target_date:
+        target_date = date.today().isoformat()
+        
+    try:
+        response = supabase.table("market_analysis_log") \
+            .select("*") \
+            .eq("date", target_date) \
+            .eq("signal", "BUY") \
+            .order("upside_ratio", desc=True) \
+            .execute()
             
-        # 2. Analyze (Integrated Logic)
-        result = analysis.analyze_ticker(ticker, df)
-        results.append(result)
+        return {"data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # 3. Notify (only if there are results)
-    if results:
-        discord_content = notifier.format_discord_message(results, macro_sentiment)
-        background_tasks.add_task(notifier.send_notification, discord_content)
+@app.get("/api/stocks/{ticker}/history")
+def get_stock_history(ticker: str):
+    """
+    Get analysis history for a specific ticker.
+    """
+    try:
+        response = supabase.table("market_analysis_log") \
+            .select("date, close_price, rsi_14, signal, upside_ratio") \
+            .eq("ticker", ticker) \
+            .order("date", desc=False) \
+            .execute()
+            
+        return {"data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # Format Response
-    macro_response = {}
-    if macro_sentiment:
-        summary = macro_sentiment.get("reason_summary", "")
-        sectors = {k: v for k, v in macro_sentiment.items() if k != "reason_summary"}
-        macro_response = {
-            "summary": summary,
-            "sectors": sectors
-        }
-
-    return {
-        "status": "success",
-        "macro": macro_response,
-        "stocks": results,
-        "global_data": global_data
-    }
+@app.get("/api/macro/latest")
+def get_latest_macro():
+    """
+    Get the latest macro environment analysis.
+    """
+    try:
+        target_date = date.today().isoformat()
+        response = supabase.table("daily_macro_log") \
+            .select("*") \
+            .eq("date", target_date) \
+            .execute()
+            
+        if not response.data:
+            # Fallback to mostly recent if today not done yet?
+            response = supabase.table("daily_macro_log") \
+                .select("*") \
+                .order("date", desc=True) \
+                .limit(1) \
+                .execute()
+                
+        return {"data": response.data[0] if response.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
