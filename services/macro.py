@@ -49,7 +49,12 @@ class MacroAnalyzer:
             for name, d in global_data.items()
         ])
 
-        sectors = list(set(config.TICKER_SECTOR_MAP.values()))
+        # Define broad sectors for comprehensive analysis
+        sectors = [
+            "自動車・輸送機", "電気・精密", "銀行・金融", "機械・鉄鋼", 
+            "素材・化学", "医薬品", "情報・通信", "エネルギー", 
+            "建設・不動産", "食品", "小売・サービス", "商社", "インフラ・運輸"
+        ]
         sectors_str = ", ".join(sectors)
         
         prompt = f"""

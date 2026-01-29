@@ -164,10 +164,52 @@ async def main():
                     upside_ratio = (bb_upper - close) / atr if atr > 0 else 0
                     
                     # Macro Score Integration
-                    sector = ticker_sector_map.get(ticker, "Unknown")
+                    # Macro Score Integration
+                    english_sector = ticker_sector_map.get(ticker, "Unknown")
+                    
+                    # Mapping English JPX 33 Sectors to Macro Categories
+                    sector_map = {
+                        "Fishery, Agriculture and Forestry": "食品",
+                        "Foods": "食品",
+                        "Construction": "建設・不動産",
+                        "Real Estate": "建設・不動産",
+                        "Textiles and Apparels": "素材・化学",
+                        "Chemicals": "素材・化学",
+                        "Pharmaceutical": "医薬品",
+                        "Oil and Coal Products": "エネルギー",
+                        "Mining": "エネルギー",
+                        "Rubber Products": "素材・化学",
+                        "Glass and Ceramics Products": "素材・化学",
+                        "Pulp and Paper": "素材・化学",
+                        "Iron and Steel": "機械・鉄鋼",
+                        "Nonferrous Metals": "機械・鉄鋼",
+                        "Metal Products": "機械・鉄鋼",
+                        "Machinery": "機械・鉄鋼",
+                        "Electric Appliances": "電気・精密",
+                        "Precision Instruments": "電気・精密",
+                        "Transportation Equipment": "自動車・輸送機",
+                        "Other Products": "小売・サービス",
+                        "Information & Communication": "情報・通信",
+                        "Services": "小売・サービス",
+                        "Electric Power and Gas": "インフラ・運輸",
+                        "Land Transportation": "インフラ・運輸",
+                        "Marine Transportation": "インフラ・運輸",
+                        "Air Transportation": "インフラ・運輸",
+                        "Warehousing and Harbor Transportation Services": "インフラ・運輸",
+                        "Wholesale Trade": "商社",
+                        "Retail Trade": "小売・サービス",
+                        "Banks": "銀行・金融",
+                        "Securities and Commodities Futures": "銀行・金融",
+                        "Insurance": "銀行・金融",
+                        "Other Financing Business": "銀行・金融"
+                    }
+                    
+                    target_category = sector_map.get(english_sector, "全体")
+                    
                     macro_score = 0
                     if macro_result:
-                        macro_score = macro_result.get(sector, macro_result.get("全体", 0))
+                        # Try specific category, then "全体", then 0
+                        macro_score = macro_result.get(target_category, macro_result.get("全体", 0))
 
                     if macro_score < 0 and signal == "BUY":
                          reason.append(f"Macro Negative ({macro_score})")
