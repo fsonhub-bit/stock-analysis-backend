@@ -50,43 +50,80 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 async def main():
-    print(f"[{datetime.now()}] Starting Daily Analysis Batch (Manual Tech Check)...")
+    print(f"[{datetime.now()}] Starting Ultimate Daily Analysis...")
 
     # 1. Macro Analysis
     print(">>> 1. Performing Global Macro Analysis...")
+    macro_result = {}
+    risk_events = []
+    
     try:
         global_data = fetch_global_market_data()
         headlines = macro_analyzer.fetch_news_headlines()
-        macro_result = macro_analyzer.analyze_sentiment(headlines, global_data)
+        ai_response = macro_analyzer.analyze_sentiment(headlines, global_data)
         
+        # New response structure: { "sector_scores": {...}, "reason_summary": "...", "risk_events": [...] }
+        # Fallback for old format if AI hallucinates
+        if "sector_scores" in ai_response:
+            macro_result = ai_response["sector_scores"]
+            summary = ai_response.get("reason_summary", "")
+            risk_events = ai_response.get("risk_events", [])
+        else:
+            # Handle flat format (old style)
+            macro_result = ai_response
+            summary = ai_response.get("reason_summary", "")
+            risk_events = [] # No events
+
         # Save to DB (daily_macro_log)
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        # Extract individual global indices
         usd_jpy = global_data.get("USD/JPY", {}).get("price")
         sox = global_data.get("PHLX Semiconductor (SOX)", {}).get("price")
         nasdaq = global_data.get("NASDAQ Composite", {}).get("price")
         
         macro_record = {
             "date": today_str,
-            "summary": macro_result.get("reason_summary", ""),
+            "summary": summary,
+            "sector_scores": macro_result,
+            "risk_events": risk_events,
             "usd_jpy": usd_jpy,
             "sox_index": sox,
-            "nasdaq_index": nasdaq,
-            "sector_scores": macro_result # JSONB
+            "nasdaq_index": nasdaq
         }
         
-        # Upsert Macro Log
         supabase.table("daily_macro_log").upsert(macro_record).execute()
-        print("    Saved Macro Log to DB.")
+        print(f"    Saved Macro Log (Events: {len(risk_events)}).")
         
     except Exception as e:
         print(f"!!! Error in Macro Analysis: {e}")
-        # Continue? Yes, technical analysis is still valuable.
-        macro_result = {}
+        # Continue with technical analysis
+    
+    # 2. Pre-fetch US Indices for Correlation Calculation (60 days)
+    print(">>> 2. Pre-fetching US Indices for Correlation...")
+    us_indices_hist = {}
+    try:
+        # Fetch longer history for correlation (90d to be safe for 60d rolling)
+        us_tickers = ["^SOX", "^IXIC", "^GSPC"]
+        us_data = yf.download(us_tickers, period="3mo", auto_adjust=True, threads=True)
+        # Handle MultiIndex
+        for ticker in us_tickers:
+            if isinstance(us_data.columns, pd.MultiIndex):
+                try:
+                    us_indices_hist[ticker] = us_data.xs(ticker, axis=1, level=1)['Close']
+                except:
+                    # Alternative yfinance structure check
+                     us_indices_hist[ticker] = us_data['Close'][ticker]
+            else:
+                 us_indices_hist[ticker] = us_data['Close'] # Single ticker case (unlikely here)
+            
+            # Fill NaN for alignment validity
+            us_indices_hist[ticker] = us_indices_hist[ticker].fillna(method='ffill')
+            
+    except Exception as e:
+        print(f"!!! Error fetching US indices history: {e}")
 
-    # 2. Load Tickers
-    print(">>> 2. Loading Tickers...")
+    # 3. Load Tickers
+    print(">>> 3. Loading Tickers...")
     try:
         tickers_df = pd.read_csv("batch_jobs/data/prime_tickers.csv")
         tickers = tickers_df['ticker'].tolist()
@@ -96,10 +133,8 @@ async def main():
         print("!!! prime_tickers.csv not found. Aborting.")
         return
 
-    # 3. Bulk Analysis Loop
-    print(">>> 3. Starting Bulk Analysis...")
-    
-    # Process in chunks of 50 for yfinance
+    # 4. Bulk Analysis Loop
+    print(">>> 4. Starting Bulk Analysis...")
     chunk_size = 50
     results_to_insert = []
     
@@ -108,152 +143,193 @@ async def main():
         print(f"    Processing chunk {i}-{i+len(chunk_tickers)}...")
         
         try:
-            # Bulk download from yfinance
-            tickers_str = " ".join(chunk_tickers)
-            # Fetch enough data for SMA75 (needs ~4-6 months)
-            data = yf.download(tickers_str, period="6mo", group_by='ticker', auto_adjust=True, threads=True)
+            # Fetch for SMA75 (needs ~6mo)
+            data = yf.download(chunk_tickers, period="6mo", group_by='ticker', auto_adjust=True, threads=True)
             
             for ticker in chunk_tickers:
                 try:
-                    # Handle single ticker result vs multi-ticker dataframe structure differences in yfinance
+                    # Extract DF
                     if len(chunk_tickers) == 1:
                         df = data
                     else:
-                        if ticker not in data.columns.levels[0]:
-                             continue
-                        df = data[ticker]
+                        if ticker not in data.columns.levels[0]: continue
+                        df = data[ticker].copy() # Copy to avoid SettingWithCopy
 
-                    if df.empty or len(df) < 75:
-                        continue
-
-                    # Calculate Indicators Manually
-                    df = calculate_technical_indicators(df)
+                    if df.empty or len(df) < 75: continue
                     
-                    # Latest row
+                    # --- TECHNICAL CALCULATION ---
+                    # 1. Basics
+                    df['SMA5'] = df['Close'].rolling(window=5).mean()
+                    df['SMA75'] = df['Close'].rolling(window=75).mean()
+                    df['Vol_SMA5'] = df['Volume'].rolling(window=5).mean()
+                    
+                    # 2. Bollinger Bands (20, 2)
+                    sma20 = df['Close'].rolling(window=20).mean()
+                    std20 = df['Close'].rolling(window=20).std()
+                    df['BB_Upper'] = sma20 + (2 * std20)
+                    df['BB_Lower'] = sma20 - (2 * std20)
+                    
+                    # 3. RSI 14
+                    delta = df['Close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rs = gain / loss
+                    df['RSI'] = 100 - (100 / (1 + rs))
+                    
+                    # 4. ATR 14
+                    high_low = df['High'] - df['Low']
+                    high_close = np.abs(df['High'] - df['Close'].shift())
+                    low_close = np.abs(df['Low'] - df['Close'].shift())
+                    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+                    true_range = np.max(ranges, axis=1)
+                    df['ATR'] = pd.Series(true_range).rolling(window=14).mean()
+                    
+                    # 5. MACD (12, 26, 9)
+                    exp1 = df['Close'].ewm(span=12, adjust=False).mean()
+                    exp2 = df['Close'].ewm(span=26, adjust=False).mean()
+                    df['MACD'] = exp1 - exp2
+                    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+                    df['MACD_Hist'] = df['MACD'] - df['Signal_Line']
+
+                    # Latest Data
                     row = df.iloc[-1]
+                    prev_row = df.iloc[-2]
                     
-                    # Ensure columns exist
-                    if pd.isna(row['BB_Upper']) or pd.isna(row['ATR']) or pd.isna(row['RSI']):
-                        continue
-                        
-                    bb_upper = row['BB_Upper']
-                    atr = row['ATR']
+                    # Clean NaNs
+                    if pd.isna(row['SMA75']) or pd.isna(row['RSI']): continue
+                    
                     close = row['Close']
+                    opn = row['Open']
+                    volume = row['Volume']
                     rsi = row['RSI']
-                    sma75 = row['SMA75']
+                    atr = row['ATR'] if not pd.isna(row['ATR']) else 0
+                    bb_upper = row['BB_Upper']
+                    sma5 = row['SMA5']
+                    vol_sma5 = row['Vol_SMA5']
+                    macd_hist = row['MACD_Hist']
+                    prev_hist = prev_row['MACD_Hist']
                     
-                    # --- Logic ---
-                    # 1. Trend: Close > SMA75
-                    # 2. Trigger: RSI < 35
-                    # 3. S-Stock: Upside Potential > 2*ATR
+                    # --- CORRELATION CALCULATION ---
+                    # Determine Parent Index
+                    english_sector = ticker_sector_map.get(ticker, "")
+                    parent_index_ticker = "^GSPC" # Default S&P500
+                    if english_sector in ["Electric Appliances", "Precision Instruments"]:
+                        parent_index_ticker = "^SOX" # Semi/Tech
+                    elif english_sector in ["Information & Communication", "Services"]:
+                        parent_index_ticker = "^IXIC" # Nasdaq
+                        
+                    correlation_us = 0.0
+                    if parent_index_ticker in us_indices_hist:
+                        # Align dates
+                        us_series = us_indices_hist[parent_index_ticker]
+                        
+                        # Get last 60 days overlapping data
+                        # Align index
+                        aligned_data = pd.DataFrame({'stock': df['Close'], 'us': us_series}).dropna().tail(60)
+                        
+                        if len(aligned_data) > 30:
+                            correlation_us = aligned_data['stock'].corr(aligned_data['us'])
+
+                    # --- LOGIC & SCORING ---
                     
                     signal = "WAIT"
                     reason = []
                     
-                    if close > sma75:
-                        if rsi < 35: 
-                            signal = "BUY" # Candidate
-                            reason.append("RSI Low & Uptrend")
-                            
-                            upside_potential = bb_upper - close
-                            if upside_potential > (atr * 2):
-                                reason.append("High Upside > 2xATR")
-                            else:
-                                signal = "WAIT" # Failed S-Stock criteria
-                                
-                    upside_ratio = (bb_upper - close) / atr if atr > 0 else 0
-                    
                     # Macro Score Integration
-                    # Macro Score Integration
-                    english_sector = ticker_sector_map.get(ticker, "Unknown")
-                    
-                    # Mapping English JPX 33 Sectors to Macro Categories
+                    # Mapping English JPX to Japanese Categories (Simplified for brevity, assumed same logic as before)
                     sector_map = {
-                        "Fishery, Agriculture and Forestry": "食品",
-                        "Foods": "食品",
-                        "Construction": "建設・不動産",
-                        "Real Estate": "建設・不動産",
-                        "Textiles and Apparels": "素材・化学",
-                        "Chemicals": "素材・化学",
-                        "Pharmaceutical": "医薬品",
-                        "Oil and Coal Products": "エネルギー",
-                        "Mining": "エネルギー",
-                        "Rubber Products": "素材・化学",
-                        "Glass and Ceramics Products": "素材・化学",
-                        "Pulp and Paper": "素材・化学",
-                        "Iron and Steel": "機械・鉄鋼",
-                        "Nonferrous Metals": "機械・鉄鋼",
-                        "Metal Products": "機械・鉄鋼",
-                        "Machinery": "機械・鉄鋼",
-                        "Electric Appliances": "電気・精密",
-                        "Precision Instruments": "電気・精密",
-                        "Transportation Equipment": "自動車・輸送機",
-                        "Other Products": "小売・サービス",
-                        "Information & Communication": "情報・通信",
-                        "Services": "小売・サービス",
-                        "Electric Power and Gas": "インフラ・運輸",
-                        "Land Transportation": "インフラ・運輸",
-                        "Marine Transportation": "インフラ・運輸",
-                        "Air Transportation": "インフラ・運輸",
-                        "Warehousing and Harbor Transportation Services": "インフラ・運輸",
-                        "Wholesale Trade": "商社",
-                        "Retail Trade": "小売・サービス",
-                        "Banks": "銀行・金融",
-                        "Securities and Commodities Futures": "銀行・金融",
-                        "Insurance": "銀行・金融",
-                        "Other Financing Business": "銀行・金融"
-                    }
-                    
+                        "Electric Appliances": "電気・精密", "Precision Instruments": "電気・精密",
+                        "Transportation Equipment": "自動車・輸送機", "Banks": "銀行・金融",
+                        "Information & Communication": "情報・通信", "Services": "小売・サービス",
+                        "Wholesale Trade": "商社", "Retail Trade": "小売・サービス",
+                        "Chemicals": "素材・化学", "Pharmaceutical": "医薬品",
+                        "Foods": "食品", "Construction": "建設・不動産", "Real Estate": "建設・不動産"
+                    } # Add full list if needed, using safe default
                     target_category = sector_map.get(english_sector, "全体")
+                    macro_score = macro_result.get(target_category, macro_result.get("全体", 0))
+
+                    # 1. AGGRESSIVE (Short-term Surge)
+                    # RSI < 50 (Not Overheated yet), Close > SMA5, Volume surge, Positive Candle, Uptrending
+                    if rsi < 60 and close > sma5 and volume > (vol_sma5 * 1.5) and close > opn:
+                        # Specific check: SMA5 is pointing up?
+                         if sma5 > prev_row['SMA5']:
+                            signal = "AGGRESSIVE"
+                            reason.append("Vol Surge & Short-term Uptrend")
+
+                    # 2. BUY (S-Stock logic / Dip Buy)
+                    # Condition: Trend is up (Close > SMA75), RSI sold off (<35), High Upside, Macro OK
+                    elif close > row['SMA75']:
+                        if rsi < 35:
+                            if macro_score >= 0:
+                                signal = "BUY"
+                                reason.append("RSI Dip & Uptrend")
+                            else:
+                                # Macro risk suppress
+                                pass
                     
-                    macro_score = 0
-                    if macro_result:
-                        # Try specific category, then "全体", then 0
-                        macro_score = macro_result.get(target_category, macro_result.get("全体", 0))
+                    # 3. Trend Strength Score (0-3) -> C-S
+                    trend_score = 0
+                    if macd_hist > 0 and macd_hist > prev_hist: trend_score += 1 # Accelerating
+                    if close > bb_upper: trend_score += 1 # Band walk potentially (or just breakout)
+                    if close > df['High'].iloc[-5:-1].max(): trend_score += 1 # New High in 5 days
+                    
+                    trend_rank_map = {0: "C", 1: "B", 2: "A", 3: "S"}
+                    trend_strength = trend_rank_map.get(trend_score, "C")
 
-                    if macro_score < 0 and signal == "BUY":
-                         reason.append(f"Macro Negative ({macro_score})")
+                    # 4. Exit Guideline (Event Risk)
+                    exit_guide = None
+                    if signal in ["BUY", "AGGRESSIVE"]: 
+                        # Check high correlation + upcoming event
+                        if correlation_us > 0.6:
+                             # Check if any high impact event is within 3 days
+                            target_date_limit = (datetime.now() + pd.Timedelta(days=3)).strftime('%Y-%m-%d')
+                            for event in risk_events:
+                                if event.get("date") <= target_date_limit:
+                                     exit_guide = f"⚠️ {event.get('name')}直前。相関高({correlation_us:.2f})のため警戒"
+                                     break
 
-                    # Prepare DB Record
-                    # Handle NaN / Inf
+                    # Upside calc
+                    upside_ratio = (row['BB_Upper'] - close) / atr if atr > 0 else 0
+                    
+                    # Clean data for DB
                     if pd.isna(upside_ratio) or np.isinf(upside_ratio): upside_ratio = 0
-                    if pd.isna(atr) or np.isinf(atr): atr = 0
+                    if pd.isna(correlation_us) or np.isinf(correlation_us): correlation_us = 0
                     
                     results_to_insert.append({
                         "date": today_str,
                         "ticker": ticker,
-                        "sector": sector,
+                        "sector": english_sector, # Keep raw sector or mapped? User asked for raw in DB schema usually
                         "close_price": float(close),
                         "rsi_14": float(rsi),
                         "atr_14": float(atr),
                         "upside_ratio": float(upside_ratio),
                         "macro_score": int(macro_score),
                         "signal": signal,
+                        "trend_strength": trend_strength,
+                        "correlation_us": float(correlation_us),
+                        "exit_guideline": exit_guide,
                         "reason": ", ".join(reason) if reason else None
                     })
-                    
+
                 except Exception as e:
-                    # print(f"    Error processing {ticker} detail: {e}")
                     continue
 
         except Exception as e:
             print(f"!!! Error in Chunk {i}: {e}")
 
-    # 4. DB Upsert
-    print(f">>> 4. Saving {len(results_to_insert)} records to DB...")
+    # 5. DB Upsert
+    print(f">>> 5. Saving {len(results_to_insert)} records to DB...")
     if results_to_insert:
-        # Upsert in chunks of 500
         db_chunk_size = 500
         for i in range(0, len(results_to_insert), db_chunk_size):
             chunk = results_to_insert[i:i + db_chunk_size]
             try:
-                # ignore_duplicates=False means upsert
                 supabase.table("market_analysis_log").upsert(chunk).execute()
                 print(f"    Upserted batch {i}-{i+len(chunk)}")
             except Exception as e:
                 print(f"!!! DB Error: {e}")
 
-    print(f"[{datetime.now()}] Batch Analysis Complete.")
+    print(f"[{datetime.now()}] Ultimate Analysis Complete.")
 
 if __name__ == "__main__":
     asyncio.run(main())

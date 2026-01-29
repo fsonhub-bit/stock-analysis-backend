@@ -20,11 +20,13 @@ async def get_recommendations():
         
         target_date = latest_date_res.data[0]["date"]
         
-        # BUYシグナルのみ取得 & 上値余地でソート
+        # BUY or AGGRESSIVE シグナルを取得
+        # signal in ("BUY", "AGGRESSIVE")
         res = supabase.table("market_analysis_log")\
             .select("*")\
             .eq("date", target_date)\
-            .eq("signal", "BUY")\
+            .in_("signal", ["BUY", "AGGRESSIVE"])\
+            .order("trend_strength", desc=True)\
             .order("upside_ratio", desc=True)\
             .execute()
             
