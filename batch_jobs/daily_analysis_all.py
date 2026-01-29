@@ -12,8 +12,87 @@ from services.market_data import fetch_global_market_data
 from app.config import config
 import json
 
+import requests
+from bs4 import BeautifulSoup
+import time
+import re
+
 # Adjust path to import services if needed
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def get_yahoo_finance_data(ticker):
+    """
+    Scrape Profile, Earnings Date, and Finance Highlights from Yahoo! Finance Japan.
+    """
+    # Remove '.T' for URL (e.g. 7203.T -> 7203)
+    code = ticker.split('.')[0]
+    base_url = f"https://finance.yahoo.co.jp/quote/{code}"
+    
+    data = {"profile": "", "finance": "", "earnings_date": ""}
+    
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        
+        # 1. Main Page (Earnings Date & Basic Info)
+        res = requests.get(base_url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            # Feature/Profile (found in specific sections usually)
+            # Strategy: Look for specific class names or meta descriptions if struct is complex
+            # Yahoo Japan Finance is dynamic, but "特色" is often in a specific block.
+            # Using a simplified text search for robustness
+            profile_el = soup.find('p', class_='_6YdC6U3') # Current class name often used for profile
+            # Fallback to meta description or searching by text "特色" near
+            if not profile_el:
+                 # Search for "特色" heading and get next sibling
+                 # Implementation dependent on current DOM. 
+                 # Fallback: Meta description
+                 meta_desc = soup.find('meta', attrs={'name': 'description'})
+                 if meta_desc:
+                     data['profile'] = meta_desc.get('content', '')
+            else:
+                 data['profile'] = profile_el.text.strip()
+                 
+            # Earnings Date
+            # Usually in a section "決算発表予定日"
+            # Attempt to find text "決算発表予定日"
+            text_el = soup.find(string=re.compile("決算発表予定日"))
+            if text_el:
+                 # Usually the date is in the next span or parent's text
+                 parent = text_el.parent
+                 # Look for date pattern YYYY/MM/DD
+                 match = re.search(r'\d{4}/\d{2}/\d{2}', parent.parent.text)
+                 if match:
+                     data['earnings_date'] = match.group(0)
+
+        # 2. Performance Page (Finance)
+        # https://finance.yahoo.co.jp/quote/7203/balance-sheet (or similar, actually 'performance' tab)
+        # Using basic info from the main page or profile might be enough for summary,
+        # but let's try to get some numbers if possible. 
+        # For simplicity and stability, we will grab the consolidated performance text if easily available on main page
+        # or just rely on the 'profile' and maybe scrape a dedicated analysis page if needed.
+        # Given complexity, we will stick to Main Page info + Profile for now, unless we fetch /performance
+        
+        # Let's fetch /performance for detailed table text
+        res_perf = requests.get(f"{base_url}/performance", headers=headers, timeout=10)
+        if res_perf.status_code == 200:
+            soup_perf = BeautifulSoup(res_perf.text, 'html.parser')
+            # Extract simple text from the performance table
+            # Look for table rows
+            rows = soup_perf.find_all('tr')
+            perf_text_list = []
+            for row in rows[:8]: # Limit to header + recent years
+                cols = [c.text.strip() for c in row.find_all(['th', 'td'])]
+                if cols:
+                    perf_text_list.append(" | ".join(cols))
+            
+            data['finance'] = "\n".join(perf_text_list)
+            
+    except Exception as e:
+        print(f"    Scraping Warning ({ticker}): {e}")
+        
+    return data
 
 def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -287,6 +366,32 @@ async def main():
                                 if event.get("date") <= target_date_limit:
                                      exit_guide = f"⚠️ {event.get('name')}直前。相関高({correlation_us:.2f})のため警戒"
                                      break
+                    
+                    # --- Deep Dive Logic for AGGRESSIVE ---
+                    perf_summary = None
+                    earnings_date = None
+                    
+                    if signal == "AGGRESSIVE":
+                        print(f"    🕵️ Deep Analyzing {ticker}...")
+                        try:
+                            # Web Data
+                            y_data = get_yahoo_finance_data(ticker)
+                            earnings_date = y_data.get("earnings_date")
+                            
+                            # AI Analysis (if data available)
+                            # Passing strings to async/sync wrapper?
+                            # macro_analyzer is sync for now (using google.generativeai sync client)
+                            if y_data.get("profile"):
+                                perf_summary = macro_analyzer.analyze_individual_stock(
+                                    ticker, 
+                                    y_data["profile"], 
+                                    y_data.get("finance", "")
+                                )
+                                # Be polite
+                                time.sleep(2)
+                                
+                        except Exception as e:
+                            print(f"    Deep Analysis Failed: {e}")
 
                     # Upside calc
                     upside_ratio = (row['BB_Upper'] - close) / atr if atr > 0 else 0
@@ -308,6 +413,8 @@ async def main():
                         "trend_strength": trend_strength,
                         "correlation_us": float(correlation_us),
                         "exit_guideline": exit_guide,
+                        "performance_summary": perf_summary,
+                        "earnings_release_date": earnings_date,
                         "reason": ", ".join(reason) if reason else None
                     })
 

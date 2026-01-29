@@ -1,7 +1,10 @@
 fastapi
 uvicorn
 yfinance
-pandas
+beautifulsoup4
+lxml
+requests
+
 httpx
 python-dotenv
 pydantic

@@ -109,4 +109,36 @@ class MacroAnalyzer:
             print(f"Gemini Analysis Error: {e}")
             return {"全体": 0, "reason_summary": "AI分析エラー"}
 
+    def analyze_individual_stock(self, ticker: str, profile: str, finance_text: str) -> str:
+        """
+        Analyze individual stock performance based on profile and financial data.
+        Returns a roughly 150-character summary.
+        """
+        if not self.model:
+            return "AI機能が無効です。"
+
+        prompt = f"""
+        あなたは証券アナリストです。以下の企業情報と業績データを元に、
+        「この企業の成長性と直近の業績トレンド」を **150文字以内** で要約してください。
+        
+        対象銘柄: {ticker}
+        
+        【企業特色】
+        {profile}
+        
+        【直近業績・財務データ】
+        {finance_text}
+        
+        【出力要件】
+        - 「増収増益で好調」「○○事業が牽引」など、ポジティブ・ネガティブな要素を明確に。
+        - 投資家向けの簡潔なコメントにすること。
+        """
+        
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            print(f"Gemini Individual Analysis Error ({ticker}): {e}")
+            return "AI分析中にエラーが発生しました。"
+
 macro_analyzer = MacroAnalyzer()
