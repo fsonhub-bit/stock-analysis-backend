@@ -49,9 +49,13 @@ def get_yahoo_finance_data(ticker):
             # Fallback to title
             if not data['name_jp']:
                 title_text = soup.title.string if soup.title else ""
-                match = re.search(r'^(.*?)(?:【\d+】)', title_text)
-                if match:
-                    data['name_jp'] = match.group(1).strip()
+                # Title format: "ソフトバンクグループ(株)【9984】：株価・株式情報 - Yahoo!ファイナンス"
+                pass1 = re.sub(r'【\d+】.*', '', title_text)
+                data['name_jp'] = pass1.replace("：株価・株式情報 - Yahoo!ファイナンス", "").strip()
+
+            # Final Cleanup for "の株価・株式情報" suffices
+            if data['name_jp']:
+                 data['name_jp'] = re.sub(r'の?株価・株式情報.*', '', data['name_jp']).strip()
 
             # Feature/Profile
             # Robust search for "特色"
