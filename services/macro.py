@@ -134,11 +134,32 @@ class MacroAnalyzer:
         - 投資家向けの簡潔なコメントにすること。
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-        except Exception as e:
-            print(f"Gemini Individual Analysis Error ({ticker}): {e}")
-            return "AI分析中にエラーが発生しました。"
+        import time
+        import re
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.model.generate_content(prompt)
+                return response.text.strip()
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "Quota exceeded" in error_str:
+                    print(f"Gemini 429 Exceeded (Attempt {attempt+1}/{max_retries}). Waiting...")
+                    
+                    # Pattern: "Please retry in 43.88041809s"
+                    delay = 60 # Default
+                    match = re.search(r"retry in (\d+(\.\d+)?)s", error_str)
+                    if match:
+                        delay = float(match.group(1)) + 5 # Add buffer
+                    
+                    if attempt < max_retries - 1:
+                        print(f"    Sleeping for {delay:.2f}s before retry.")
+                        time.sleep(delay)
+                        continue
+                
+                # Other errors or max retries exceeded
+                print(f"Gemini Individual Analysis Error ({ticker}): {e}")
+                return "AI分析エラー: レート制限または通信エラー"
 
 macro_analyzer = MacroAnalyzer()
