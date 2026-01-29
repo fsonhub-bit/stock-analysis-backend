@@ -385,9 +385,20 @@ async def main():
                              # Check if any high impact event is within 3 days
                             target_date_limit = (datetime.now() + pd.Timedelta(days=3)).strftime('%Y-%m-%d')
                             for event in risk_events:
-                                if event.get("date") <= target_date_limit:
                                      exit_guide = f"⚠️ {event.get('name')}直前。相関高({correlation_us:.2f})のため警戒"
                                      break
+
+                    # --- Name Logic (EN Fetch for Signals) ---
+                    name_en = None
+                    if signal in ["BUY", "AGGRESSIVE"]:
+                        try:
+                            # Use yfinance Ticker to get metadata
+                            t_obj = yf.Ticker(ticker)
+                            # Try longName then shortName
+                            info = t_obj.info
+                            name_en = info.get('longName') or info.get('shortName')
+                        except Exception:
+                            pass
                     
                     # --- Deep Dive Logic for AGGRESSIVE ---
                     perf_summary = None
@@ -425,7 +436,9 @@ async def main():
                     results_to_insert.append({
                         "date": today_str,
                         "ticker": ticker,
-                        "sector": english_sector, # Keep raw sector or mapped? User asked for raw in DB schema usually
+                        "sector": english_sector,
+                        "name_jp": name_jp,
+                        "name_en": name_en,
                         "close_price": float(close),
                         "rsi_14": float(rsi),
                         "atr_14": float(atr),
