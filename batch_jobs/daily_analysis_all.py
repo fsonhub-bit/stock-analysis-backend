@@ -38,21 +38,40 @@ def get_yahoo_finance_data(ticker):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             
-            # Feature/Profile (found in specific sections usually)
-            # Strategy: Look for specific class names or meta descriptions if struct is complex
-            # Yahoo Japan Finance is dynamic, but "特色" is often in a specific block.
-            # Using a simplified text search for robustness
-            profile_el = soup.find('p', class_='_6YdC6U3') # Current class name often used for profile
-            # Fallback to meta description or searching by text "特色" near
+            # Feature/Profile
+            # Robust search for "特色"
+            # 1. Try class (often changes)
+            profile_el = soup.find('p', class_='_6YdC6U3')
+            
+            # 2. Try text search for "【特色】" or "特色" in dt/span
             if not profile_el:
-                 # Search for "特色" heading and get next sibling
-                 # Implementation dependent on current DOM. 
-                 # Fallback: Meta description
+                feature_label = soup.find(string=re.compile("特色"))
+                if feature_label:
+                    # Often <span class="...">【特色】</span> <span class="...">Descr...</span>
+                    # Or <div> ... </div>
+                    # Try next sibling or parent's text
+                    try:
+                       parent = feature_label.parent
+                       # Check siblings
+                       sibling = parent.find_next_sibling()
+                       if sibling:
+                           data['profile'] = sibling.text.strip()
+                       else:
+                           # Maybe in the same parent text?
+                           full_text = parent.parent.text.replace(feature_label, "").strip()
+                           if len(full_text) > 5 and len(full_text) < 200:
+                               data['profile'] = full_text
+                    except:
+                        pass
+
+            else:
+                 data['profile'] = profile_el.text.strip()
+
+            # Fallback to meta if still empty
+            if not data['profile']:
                  meta_desc = soup.find('meta', attrs={'name': 'description'})
                  if meta_desc:
                      data['profile'] = meta_desc.get('content', '')
-            else:
-                 data['profile'] = profile_el.text.strip()
                  
             # Earnings Date
             # Usually in a section "決算発表予定日"
@@ -61,8 +80,8 @@ def get_yahoo_finance_data(ticker):
             if text_el:
                  # Usually the date is in the next span or parent's text
                  parent = text_el.parent
-                 # Look for date pattern YYYY/MM/DD
-                 match = re.search(r'\d{4}/\d{2}/\d{2}', parent.parent.text)
+                 # Look for date pattern YYYY/MM/DD or YYYY/M/D
+                 match = re.search(r'\d{4}/\d{1,2}/\d{1,2}', parent.parent.text)
                  if match:
                      data['earnings_date'] = match.group(0)
 
