@@ -39,7 +39,7 @@ async def get_stock_history(ticker: str):
     try:
         # 指定銘柄の全履歴（または直近90件）を取得
         res = supabase.table("market_analysis_log")\
-            .select("date, close_price, rsi_14, macro_score, signal")\
+            .select("*")\
             .eq("ticker", ticker)\
             .order("date", desc=False)\
             .limit(90)\
