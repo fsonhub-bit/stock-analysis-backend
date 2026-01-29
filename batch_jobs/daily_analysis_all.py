@@ -22,13 +22,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def get_yahoo_finance_data(ticker):
     """
-    Scrape Profile, Earnings Date, and Finance Highlights from Yahoo! Finance Japan.
+    Scrape Profile, Earnings Date, Finance Highlights, and Company Name from Yahoo! Finance Japan.
     """
     # Remove '.T' for URL (e.g. 7203.T -> 7203)
     code = ticker.split('.')[0]
     base_url = f"https://finance.yahoo.co.jp/quote/{code}"
     
-    data = {"profile": "", "finance": "", "earnings_date": ""}
+    data = {"profile": "", "finance": "", "earnings_date": "", "name_jp": ""}
     
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
@@ -38,6 +38,21 @@ def get_yahoo_finance_data(ticker):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             
+            # Company Name (Title or H1)
+            h1 = soup.find('h1')
+            if h1:
+                # Text might be "ソフトバンクグループ(株)" or "ソフトバンクグループ(株)【9984】"
+                raw_name = h1.text.strip()
+                # Remove ticker if present (e.g. 【9984】)
+                data['name_jp'] = re.sub(r'【\d+】.*', '', raw_name).strip()
+            
+            # Fallback to title
+            if not data['name_jp']:
+                title_text = soup.title.string if soup.title else ""
+                match = re.search(r'^(.*?)(?:【\d+】)', title_text)
+                if match:
+                    data['name_jp'] = match.group(1).strip()
+
             # Feature/Profile
             # Robust search for "特色"
             # 1. Try class (often changes)
@@ -48,8 +63,6 @@ def get_yahoo_finance_data(ticker):
                 feature_label = soup.find(string=re.compile("特色"))
                 if feature_label:
                     # Often <span class="...">【特色】</span> <span class="...">Descr...</span>
-                    # Or <div> ... </div>
-                    # Try next sibling or parent's text
                     try:
                        parent = feature_label.parent
                        # Check siblings
@@ -86,13 +99,6 @@ def get_yahoo_finance_data(ticker):
                      data['earnings_date'] = match.group(0)
 
         # 2. Performance Page (Finance)
-        # https://finance.yahoo.co.jp/quote/7203/balance-sheet (or similar, actually 'performance' tab)
-        # Using basic info from the main page or profile might be enough for summary,
-        # but let's try to get some numbers if possible. 
-        # For simplicity and stability, we will grab the consolidated performance text if easily available on main page
-        # or just rely on the 'profile' and maybe scrape a dedicated analysis page if needed.
-        # Given complexity, we will stick to Main Page info + Profile for now, unless we fetch /performance
-        
         # Let's fetch /performance for detailed table text
         res_perf = requests.get(f"{base_url}/performance", headers=headers, timeout=10)
         if res_perf.status_code == 200:
@@ -311,7 +317,9 @@ async def main():
                     # --- CORRELATION CALCULATION ---
                     # Determine Parent Index
                     english_sector = ticker_sector_map.get(ticker, "")
-                    name_jp = ticker_name_map.get(ticker, "")
+                    # CSV Name is now assigned to name_en
+                    name_en = ticker_name_map.get(ticker, "")
+                    name_jp = None
                     
                     parent_index_ticker = "^GSPC" # Default S&P500
                     if english_sector in ["Electric Appliances", "Precision Instruments"]:
