@@ -396,43 +396,41 @@ async def main():
                                      exit_guide = f"⚠️ {event.get('name')}直前。相関高({correlation_us:.2f})のため警戒"
                                      break
 
-                    # --- Name Logic (EN Fetch for Signals) ---
-                    name_en = None
-                    if signal in ["BUY", "AGGRESSIVE"]:
-                        try:
-                            # Use yfinance Ticker to get metadata
-                            t_obj = yf.Ticker(ticker)
-                            # Try longName then shortName
-                            info = t_obj.info
-                            name_en = info.get('longName') or info.get('shortName')
-                        except Exception:
-                            pass
+                    # --- Name Fetch (JP Strategy) & Deep Dive ---
+                    # Strategy: If BUY or AGGRESSIVE, scrape Yahoo Finance for name_jp
+                    # If AGGRESSIVE, also get profile/finance for AI summary
                     
-                    # --- Deep Dive Logic for AGGRESSIVE ---
                     perf_summary = None
                     earnings_date = None
                     
-                    if signal == "AGGRESSIVE":
-                        print(f"    🕵️ Deep Analyzing {ticker}...")
+                    if signal in ["BUY", "AGGRESSIVE"]:
                         try:
-                            # Web Data
+                            # Scraping for Name (JP) and Data
                             y_data = get_yahoo_finance_data(ticker)
-                            earnings_date = y_data.get("earnings_date")
                             
-                            # AI Analysis (if data available)
-                            # Passing strings to async/sync wrapper?
-                            # macro_analyzer is sync for now (using google.generativeai sync client)
-                            if y_data.get("profile"):
-                                perf_summary = macro_analyzer.analyze_individual_stock(
-                                    ticker, 
-                                    y_data["profile"], 
-                                    y_data.get("finance", "")
-                                )
+                            # Populate name_jp
+                            if y_data.get("name_jp"):
+                                name_jp = y_data["name_jp"]
+                                
+                            # If AGGRESSIVE, do Deep Dive (AI)
+                            if signal == "AGGRESSIVE":
+                                print(f"    🕵️ Deep Analyzing {ticker} ({name_jp})...")
+                                earnings_date = y_data.get("earnings_date")
+                                
+                                if y_data.get("profile"):
+                                    perf_summary = macro_analyzer.analyze_individual_stock(
+                                        ticker, 
+                                        y_data["profile"], 
+                                        y_data.get("finance", "")
+                                    )
                                 # Be polite
                                 time.sleep(2)
+                            else:
+                                # For BUY, just sleep a bit less or same
+                                time.sleep(1)
                                 
                         except Exception as e:
-                            print(f"    Deep Analysis Failed: {e}")
+                            print(f"    Data Fetch Failed for {ticker}: {e}")
 
                     # Upside calc
                     upside_ratio = (row['BB_Upper'] - close) / atr if atr > 0 else 0
