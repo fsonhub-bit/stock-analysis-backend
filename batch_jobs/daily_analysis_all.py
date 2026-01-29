@@ -226,6 +226,7 @@ async def main():
         tickers_df = pd.read_csv("batch_jobs/data/prime_tickers.csv")
         tickers = tickers_df['ticker'].tolist()
         ticker_sector_map = dict(zip(tickers_df['ticker'], tickers_df['sector']))
+        ticker_name_map = dict(zip(tickers_df['ticker'], tickers_df['name']))
         print(f"    Loaded {len(tickers)} tickers.")
     except FileNotFoundError:
         print("!!! prime_tickers.csv not found. Aborting.")
@@ -310,6 +311,8 @@ async def main():
                     # --- CORRELATION CALCULATION ---
                     # Determine Parent Index
                     english_sector = ticker_sector_map.get(ticker, "")
+                    name_jp = ticker_name_map.get(ticker, "")
+                    
                     parent_index_ticker = "^GSPC" # Default S&P500
                     if english_sector in ["Electric Appliances", "Precision Instruments"]:
                         parent_index_ticker = "^SOX" # Semi/Tech
