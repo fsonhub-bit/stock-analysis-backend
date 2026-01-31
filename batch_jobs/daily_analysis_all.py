@@ -400,42 +400,38 @@ async def main():
                                      exit_guide = f"⚠️ {event.get('name')}直前。相関高({correlation_us:.2f})のため警戒"
                                      break
 
-                    # --- Name Fetch (JP Strategy) & Deep Dive ---
+                    # --- Name Fetch (JP Strategy) & Deep Dive (Gemma 3) ---
                     # Strategy: If BUY or AGGRESSIVE, scrape Yahoo Finance for name_jp
-                    # If AGGRESSIVE, also get profile/finance for AI summary
+                    # Perform AI Summary for both signals (Unlimited Gemma Coverage)
                     
                     perf_summary = None
                     earnings_date = None
                     
                     if signal in ["BUY", "AGGRESSIVE"]:
                         try:
-                            # Scraping for Name (JP) and Data
+                            # 1. Scraping for Name (JP) and Data
                             y_data = get_yahoo_finance_data(ticker)
                             
-                            # Populate name_jp
                             if y_data.get("name_jp"):
                                 name_jp = y_data["name_jp"]
-                                
-                            # If AGGRESSIVE, do Deep Dive (AI)
-                            if signal == "AGGRESSIVE":
-                                print(f"    🕵️ Deep Analyzing {ticker} ({name_jp})...")
-                                earnings_date = y_data.get("earnings_date")
-                                
-                                if y_data.get("profile"):
-                                    perf_summary = macro_analyzer.analyze_individual_stock(
-                                        ticker, 
-                                        y_data["profile"], 
-                                        y_data.get("finance", "")
-                                    )
-                                # Be polite
-                                time.sleep(2)
-                            else:
-                                # For BUY, just sleep a bit less or same
-                                time.sleep(1)
-                                
+                            
+                            earnings_date = y_data.get("earnings_date")
+
+                            # 2. AI Deep Dive (Full Coverage)
+                            print(f"    🕵️ Deep Analyzing {ticker} ({name_jp})...")
+                            if y_data.get("profile"):
+                                perf_summary = macro_analyzer.analyze_individual_stock(
+                                    ticker, 
+                                    y_data["profile"], 
+                                    y_data.get("finance", "")
+                                )
+                                # Gemma 3 Limit is high (14400/day). 
+                                # A short sleep (2-3s) is polite for the scraper and API.
+                                time.sleep(3) 
+
                         except Exception as e:
                             print(f"    Data Fetch Failed for {ticker}: {e}")
-
+                    
                     # Upside calc
                     upside_ratio = (row['BB_Upper'] - close) / atr if atr > 0 else 0
                     

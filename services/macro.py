@@ -8,13 +8,18 @@ from typing import Dict, Any
 from app.config import config
 
 class MacroAnalyzer:
-    def __init__(self):
-        self.api_key = config.GEMINI_API_KEY
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if self.api_key:
             genai.configure(api_key=self.api_key)
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel("gemini-flash-latest")
+            # Switch to Gemma 3 27B IT
+            self.model = genai.GenerativeModel(
+                model_name="gemma-3-27b-it",
+                generation_config={
+                    "temperature": 0.2,       # Low temp for factual accuracy
+                    "max_output_tokens": 250, # Slightly higher to allow full Japanese formation
+                }
+            )
         else:
             self.model = None
 
@@ -34,20 +39,12 @@ class MacroAnalyzer:
         
         return "\n".join(headlines)
 
-    def analyze_sentiment(self, headlines: str, global_data: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_macro_market(self, global_text: str, headlines: str) -> dict:
         """
-        Analyze sentiment for sectors based on headlines and global market data using Gemini.
-        Returns a dictionary like {"自動車": -2, "半導体": +4, "全体": +1, "reason": "..."}
+        Analyze macro market conditions (Sector Scores & Risk Events).
         """
         if not self.model:
-            print("Gemini API Key missing.")
-            return {"全体": 0, "reason_summary": "API Key未設定"}
-
-        # Format global data
-        global_text = "\n".join([
-            f"- {name}: {d['price']:.2f} (前日比 {d['change_pct']:.2f}%)"
-            for name, d in global_data.items()
-        ])
+            return {}
 
         # Define broad sectors for comprehensive analysis
         sectors = [
@@ -57,47 +54,43 @@ class MacroAnalyzer:
         ]
         sectors_str = ", ".join(sectors)
         
+        from datetime import datetime
+        
         prompt = f"""
-        あなたは百戦錬磨の日本株ストラテジストです。
-        本日は **{datetime.now().strftime('%Y/%m/%d')}** です。
-        
-        以下の情報を元に、
-        1. 「今日の日本株市場における各セクターのセンチメント」を -5(超悲観)〜+5(超楽観) で判定
-        2. 「向こう2週間以内の重要経済イベント」を抽出し、リスク度を判定
+あなたはプロの証券アナリストです。
+本日は **{datetime.now().strftime('%Y/%m/%d')}** です。
 
-        【重要：判断の重み付け】
-        1. **米国株・為替動向 (Weight: 70%)**: 日本株は米国市場と為替に強く連動します。
-           - SOX指数が上昇 → 日本の半導体セクターは「買い (+3以上)」
-           - NASDAQが上昇 → 日本のハイテク・グロースは「買い」
-           - ドル円が円安(数値上昇) → 輸出関連(自動車など)は「買い」、円高なら「売り」
-        2. **国内ニュース (Weight: 30%)**: 個別の好悪材料を加味してください。
+以下の情報を元に、日本株市場の分析を行ってください。
 
-        【入力データ】
-        == 米国市場・為替 (最重要) ==
-        {global_text}
+### 役割
+- 今日の市場センチメントをセクター別に評価する。
+- 向こう2週間以内の重要経済イベントを抽出する。
 
-        == 国内主要ニュース ==
-        {headlines}
+### 入力情報
+【米国市場・為替】
+{global_text}
 
-        【出力フォーマット】
-        JSON形式で出力してください。
-        対象セクター: [{sectors_str}, 全体]
-        
-        Example JSON:
-        {{
-            "sector_scores": {{
-                "自動車・輸送機": 3,
-                "半導体・ハイテク": -2,
-                "全体": 1
-            }},
-            "reason_summary": "SOX指数の急落を受け半導体は厳しいが、円安進行により自動車は堅調。(50文字以内)",
-            "risk_events": [
-                {{"name": "FOMC政策金利発表", "date": "2024-03-20", "impact": "High"}},
-                {{"name": "米雇用統計", "date": "2024-03-08", "impact": "High"}}
-            ]
-        }}
-        ※ risk_events は、今後2週間以内に予定されている重要イベント（FOMC, 日銀会合, 米雇用統計, CPI, SQ, 決算など）を一般的な知識から補完して挙げてください。ニュースにない場合もカレンダー知識から補完すること。
-        """
+【国内主要ニュース】
+{headlines}
+
+### 出力フォーマット (JSON)
+{{
+    "sector_scores": {{
+        "自動車・輸送機": 0,
+        "半導体・ハイテク": 0,
+        "全体": 0
+    }},
+    "reason_summary": "50文字以内の市場概況サマリ",
+    "risk_events": [
+        {{"name": "イベント名", "date": "YYYY-MM-DD", "impact": "High/Medium"}}
+    ]
+}}
+
+### 制約事項
+- `sector_scores` は -5(超悲観)〜+5(超楽観) でつけること。
+- `risk_events` は入力情報または一般的な経済カレンダー知識から補完すること。
+- 必ず有効なJSONのみを出力すること。Markdownのコードブロックは不要。
+"""
         
         try:
             response = self.model.generate_content(prompt)
@@ -105,6 +98,8 @@ class MacroAnalyzer:
             text = response.text.strip()
             if text.startswith("```json"):
                 text = text.replace("```json", "").replace("```", "")
+            if text.startswith("```"): # Handle case where language isn't specified
+                text = text.replace("```", "")
             
             result = json.loads(text)
             return result
@@ -124,29 +119,37 @@ class MacroAnalyzer:
         today_str = datetime.now().strftime('%Y/%m/%d')
 
         prompt = f"""
-        あなたは証券アナリストです。
-        本日は **{today_str}** です。
-        
-        以下の企業情報と**最新の業績データ**を元に、
-        「この企業の成長性と直近の業績トレンド」を **150文字以内** で要約してください。
-        
-        対象銘柄: {ticker}
-        
-        【企業特色】
-        {profile}
-        
-        【直近業績・財務データ】
-        (ここに記載されているのが最新のデータです)
-        {finance_text}
-        
-        【出力要件】
-        - 過去の古い情報ではなく、提供されたデータに基づく最新の状況（増収増益、赤字転落、回復基調など）を反映させてください。
-        - 「増収増益で好調」「○○事業が牽引」など、主要因を明確に。
-        - 投資家向けの簡潔なコメントにすること。
-        """
+あなたはプロの証券アナリストです。
+以下の【企業の特色】と【直近の業績推移】データを分析し、投資家向けの短い要約を作成してください。
+
+### 制約事項
+1. **日本語**で記述すること。
+2. **150文字以内**で簡潔にまとめること。
+3. 主観的な挨拶（「はい、分かりました」等）は**一切不要**。分析結果のみを出力すること。
+4. 以下の順序で構成すること:
+   - 企業の強みや事業内容（簡潔に）
+   - 直近の業績トレンド（増収増益/減収減益など）
+   - 利益率や成長性への評価
+
+### 入力データ
+【日付】
+{today_str}
+
+【銘柄】
+{ticker}
+
+【企業の特色】
+{profile}
+
+【業績推移データ】
+{finance_text}
+
+### 出力
+"""
         
         import time
         import re
+        from google.api_core import exceptions
 
         max_retries = 3
         for attempt in range(max_retries):
@@ -155,22 +158,18 @@ class MacroAnalyzer:
                 return response.text.strip()
             except Exception as e:
                 error_str = str(e)
-                if "429" in error_str or "Quota exceeded" in error_str:
-                    print(f"Gemini 429 Exceeded (Attempt {attempt+1}/{max_retries}). Waiting...")
+                # Handle standard 429
+                if "429" in error_str or "Quota exceeded" in error_str or "ResourceExhausted" in error_str:
+                    print(f"Gemma 429 Exceeded (Attempt {attempt+1}/{max_retries}). Waiting...")
                     
-                    # Pattern: "Please retry in 43.88041809s"
-                    delay = 60 # Default
-                    match = re.search(r"retry in (\d+(\.\d+)?)s", error_str)
-                    if match:
-                        delay = float(match.group(1)) + 5 # Add buffer
+                    delay = 10 * (attempt + 1) # Simple backoff
                     
                     if attempt < max_retries - 1:
                         print(f"    Sleeping for {delay:.2f}s before retry.")
                         time.sleep(delay)
                         continue
                 
-                # Other errors or max retries exceeded
-                print(f"Gemini Individual Analysis Error ({ticker}): {e}")
-                return "AI分析エラー: レート制限または通信エラー"
+                print(f"Gemma Analysis Error ({ticker}): {e}")
+                return "AI分析エラー: 通信または生成エラー"
 
 macro_analyzer = MacroAnalyzer()
