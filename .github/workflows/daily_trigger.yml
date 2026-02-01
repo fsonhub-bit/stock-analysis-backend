@@ -2,8 +2,8 @@ name: Daily Stock Analysis Batch
 
 on:
   schedule:
-    # JST 08:00 (UTC 23:00) に実行
-    - cron: "0 23 * * *"
+    # JST 07:00 (UTC 23:00) に実行
+    - cron: "0 22 * * *"
   workflow_dispatch:
 
 jobs:
