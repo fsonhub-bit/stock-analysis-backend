@@ -34,6 +34,39 @@ async def get_recommendations():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/latest")
+async def get_latest_analysis(mode: str = "all"):
+    """
+    Get the latest analysis data.
+    - mode="recommend": Returns only BUY/AGGRESSIVE signals (Lightweight)
+    - mode="all": Returns all stocks (Heavy)
+    """
+    try:
+        # Get latest date
+        latest_date_res = supabase.table("market_analysis_log").select("date").order("date", desc=True).limit(1).execute()
+        if not latest_date_res.data:
+            return {"status": "no_data", "stocks": []}
+        
+        target_date = latest_date_res.data[0]["date"]
+        
+        query = supabase.table("market_analysis_log").select("*").eq("date", target_date)
+        
+        # Mode-based filtering
+        if mode == "recommend":
+            query = query.in_("signal", ["BUY", "AGGRESSIVE"])
+            # Add ordering for recommendation view
+            query = query.order("trend_strength", desc=True).order("upside_ratio", desc=True)
+        else:
+            # For "all", maybe order by sector or ticker?
+            query = query.order("ticker", desc=False)
+            
+        res = query.execute()
+            
+        return {"status": "success", "date": target_date, "mode": mode, "count": len(res.data), "stocks": res.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/history/{ticker}")
 async def get_stock_history(ticker: str):
     try:
