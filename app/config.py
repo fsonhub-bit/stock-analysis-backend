@@ -12,8 +12,8 @@ class Config:
     # RSS Feeds (English Sources for Speed & Accuracy)
     RSS_FEEDS = [
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", # CNBC Top News
-        "http://feeds.reuters.com/reuters/businessNews", # Reuters Business (US)
-        "https://www.investing.com/rss/news.rss"         # Investing.com Headlines
+        "https://www.investing.com/rss/news.rss",       # Investing.com Headlines
+        "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en" # Google News Business (US)
     ]
     
     # Ticker to Sector Mapping

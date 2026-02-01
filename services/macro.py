@@ -47,8 +47,13 @@ class MacroAnalyzer:
         if not self.model:
             return {}
 
+        from datetime import datetime
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        
         prompt = f"""
 You are a top-tier hedge fund manager. 
+Today is **{today_str}**.
+
 Analyze the following "Market Data" and "News Headlines" to determine the sentiment for Japanese stock sectors.
 
 ### Market Data
