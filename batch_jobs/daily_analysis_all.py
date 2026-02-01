@@ -205,7 +205,7 @@ async def main():
         sox = get_price("SOXX(Semiconductor)") # Using ETF proxy
         # Fallback to index if needed? Config has "SOXX(Semiconductor)"
         
-        macro_record = {        # Mapping new data to existing DB columns (Best Effort)
+        # Mapping new data to existing DB columns (Best Effort)
         # Old columns: usd_jpy, sox_index, nasdaq_index
         # New keys: "USD/JPY", "SOXX(Semiconductor)", "NASDAQ100"
         
