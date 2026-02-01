@@ -9,11 +9,11 @@ class Config:
     
     TARGET_TICKERS = ["7203.T", "9984.T", "8306.T"]
     
-    # RSS Feeds for Market Sentiment
+    # RSS Feeds (English Sources for Speed & Accuracy)
     RSS_FEEDS = [
-        "https://feeds.reuters.com/reuters/JAPANTopNews", # Reuters Japan Top News
-        "https://www3.nhk.or.jp/rss/news/cat0.xml",       # NHK Top News
-        # Add more reliable feeds here
+        "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", # CNBC Top News
+        "http://feeds.reuters.com/reuters/businessNews", # Reuters Business (US)
+        "https://www.investing.com/rss/news.rss"         # Investing.com Headlines
     ]
     
     # Ticker to Sector Mapping
@@ -23,12 +23,33 @@ class Config:
         "9984.T": "通信・投資",
     }
 
-    # Global Indicators
+    # Global The Macro Monitor Tickeres
+    # Keys are Yahoo Finance Symbols, Values are display names/labels for AI
     GLOBAL_TICKERS = {
-        "^GSPC": "S&P 500",
-        "^IXIC": "NASDAQ Composite",
-        "^SOX": "PHLX Semiconductor (SOX)", 
-        "JPY=X": "USD/JPY"
+        # A. Major Indices
+        "^GSPC": "S&P500",
+        "^NDX": "NASDAQ100",
+        "^RUT": "Russell2000(SmallCap)",
+        
+        # B. Rates & Bonds
+        "^TNX": "US10Y_Yield",
+        "^IRX": "US02Y_Yield",
+        
+        # C. Risk & Sentiment
+        "^VIX": "VIX(Fear_Index)",
+        "HYG":  "HYG(High_Yield_Bond_Risk_Appetite)",
+        
+        # D. Commodities & FX
+        "CL=F":     "Crude_Oil_WTI",
+        "GC=F":     "Gold",
+        "DX-Y.NYB": "DXY(Dollar_Index)",
+        "BTC-USD":  "Bitcoin",
+        "JPY=X":    "USD/JPY",
+        
+        # E. Sector Indices (Leading Indicators for JP Sectors)
+        "SOXX": "SOXX(Semiconductor)",
+        "XLF":  "XLF(US_Financials)",
+        "XLE":  "XLE(US_Energy)"
     }
     GLOBAL_DATA_PERIOD = "5d"
 

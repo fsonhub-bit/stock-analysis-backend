@@ -166,15 +166,26 @@ async def main():
     risk_events = []
     
     try:
-        global_data = fetch_global_market_data()
-        headlines = macro_analyzer.fetch_news_headlines()
-        ai_response = macro_analyzer.analyze_sentiment(headlines, global_data)
+        global_data = fetch_global_market_data() # Returns dict { "Name": {"price": ..., "change_pct": ...} }
         
-        # New response structure: { "sector_scores": {...}, "reason_summary": "...", "risk_events": [...] }
+        # Format Market Data for AI Prompt
+        market_text_lines = []
+        for name, data in global_data.items():
+            price = data.get("price")
+            change = data.get("change_pct")
+            if price is not None and change is not None:
+                market_text_lines.append(f"- {name}: {price:,.2f} (Change: {change:+.2f}%)")
+        market_text = "\n".join(market_text_lines)
+
+        headlines = macro_analyzer.fetch_news_headlines()
+        
+        # New call with text-based global data
+        ai_response = macro_analyzer.analyze_macro_market(market_text, headlines)
+        
         # Fallback for old format if AI hallucinates
         if "sector_scores" in ai_response:
             macro_result = ai_response["sector_scores"]
-            summary = ai_response.get("reason_summary", "")
+            summary = ai_response.get("reason_summary", "") or ai_response.get("summary", "")
             risk_events = ai_response.get("risk_events", [])
         else:
             # Handle flat format (old style)
@@ -185,9 +196,22 @@ async def main():
         # Save to DB (daily_macro_log)
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        usd_jpy = global_data.get("USD/JPY", {}).get("price")
-        sox = global_data.get("PHLX Semiconductor (SOX)", {}).get("price")
-        nasdaq = global_data.get("NASDAQ Composite", {}).get("price")
+        # Helper to safely get price
+        def get_price(key_name):
+            # global_data keys are now Human Readable names from Config
+            return global_data.get(key_name, {}).get("price")
+            
+        usd_jpy = get_price("USD/JPY")
+        sox = get_price("SOXX(Semiconductor)") # Using ETF proxy
+        # Fallback to index if needed? Config has "SOXX(Semiconductor)"
+        
+        macro_record = {        # Mapping new data to existing DB columns (Best Effort)
+        # Old columns: usd_jpy, sox_index, nasdaq_index
+        # New keys: "USD/JPY", "SOXX(Semiconductor)", "NASDAQ100"
+        
+        usd_jpy = get_price("USD/JPY")
+        sox = get_price("SOXX(Semiconductor)") # Store SOXX price in sox_index
+        nasdaq = get_price("NASDAQ100")        # Store NDX price in nasdaq_index
         
         macro_record = {
             "date": today_str,
