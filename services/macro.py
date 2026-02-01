@@ -143,7 +143,7 @@ Return a valid JSON object. Do not include any explanations or markdown ticks (`
 
         prompt = f"""
 あなたはプロの証券アナリストです。
-以下の【企業の特色】と【直近の業績推移】データを分析し、投資家向けの短い要約を作成してください。
+本日({today_str})時点の情報として、以下の【企業の特色】と【直近の業績推移】データを分析し、投資家向けの短い要約を作成してください。
 
 ### 制約事項
 1. **日本語**で記述すること。
