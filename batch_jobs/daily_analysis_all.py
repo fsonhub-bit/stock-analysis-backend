@@ -212,7 +212,7 @@ async def main():
             risk_events = [] # No events
 
         # Save to DB (daily_macro_log)
-        today_str = datetime.now().strftime('%Y-%m-%d')
+        # today_str is already set to target_date in main()
         
         # Helper to safely get price
         def get_price(key_name):
