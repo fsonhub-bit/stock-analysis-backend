@@ -241,6 +241,8 @@ async def main():
             "nasdaq_index": nasdaq
         }
         
+        print(f"    📝 Saving Macro Log for Date: {macro_record['date']}")
+        
         supabase.table("daily_macro_log").upsert(macro_record).execute()
         print(f"    Saved Macro Log (Events: {len(risk_events)}).")
         
