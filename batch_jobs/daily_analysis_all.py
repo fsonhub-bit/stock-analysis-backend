@@ -195,7 +195,7 @@ async def main():
                 market_text_lines.append(f"- {name}: {price:,.2f} (Change: {change:+.2f}%)")
         market_text = "\n".join(market_text_lines)
 
-        headlines = macro_analyzer.fetch_news_headlines()
+        headlines = macro_analyzer.fetch_news_headlines(target_date=target_date_obj)
         
         # New call with text-based global data
         ai_response = macro_analyzer.analyze_macro_market(market_text, headlines, reference_date=today_str)

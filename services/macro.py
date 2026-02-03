@@ -5,8 +5,10 @@ import json
 import os
 import re
 from typing import Dict, Any
+from datetime import datetime
 
 from app.config import config
+from services.news_scraper import fetch_historical_headlines
 
 class MacroAnalyzer:
     def __init__(self, api_key: str = None):
@@ -24,19 +26,36 @@ class MacroAnalyzer:
         else:
             self.model = None
 
-    def fetch_news_headlines(self) -> str:
+    def fetch_news_headlines(self, target_date: datetime = None) -> str:
         """
-        Fetch top news headlines from configured RSS feeds.
+        Fetch news headlines from English RSS feeds OR Historical Archive.
+        Returns a formatted string of headlines.
         """
+        # Historical Mode
+        if target_date:
+            # Check if target_date is "today" (approx). If so, use RSS for speed/freshness?
+            # Or always use Archive if specified?
+            # User said: "If option is None, use RSS. If date specified, use past news."
+            # Even if date is today, if user specifies it, maybe they want the "Day's Record"? 
+            # But Archive might not be populated for "Today" yet.
+            # Let's use RSS if target_date is Today.
+            today = datetime.now().date()
+            if target_date.date() < today:
+                print(f"    Fetching Historical News for {target_date.strftime('%Y-%m-%d')}...")
+                return fetch_historical_headlines(target_date)
+        
+        # Default / Today Mode (RSS)
+        print("    Fetching RSS Headlines...")
         headlines = []
         for url in config.RSS_FEEDS:
             try:
                 feed = feedparser.parse(url)
                 # Take top 5 entries from each feed
-                for entry in feed.entries[:5]:
-                    headlines.append(f"- {entry.title}")
+                for entry in feed.entries[:5]: # Top 5 per feed
+                    title = entry.title
+                    headlines.append(f"- {title}")
             except Exception as e:
-                print(f"Error fetching RSS {url}: {e}")
+                print(f"RSS Error ({url}): {e}")
         
         return "\n".join(headlines)
 
