@@ -40,15 +40,16 @@ class MacroAnalyzer:
         
         return "\n".join(headlines)
 
-    def analyze_macro_market(self, global_text: str, headlines: str) -> dict:
+    def analyze_macro_market(self, global_text: str, headlines: str, reference_date: str = None) -> dict:
         """
         Analyze macro market conditions (Sector Scores & Risk Events) using new Pro-Grade Logic.
+        reference_date: YYYY-MM-DD string to force AI date context.
         """
         if not self.model:
             return {}
 
         from datetime import datetime
-        today_str = datetime.now().strftime('%Y-%m-%d')
+        today_str = reference_date if reference_date else datetime.now().strftime('%Y-%m-%d')
         
         prompt = f"""
 You are a top-tier hedge fund manager. 
@@ -130,7 +131,7 @@ Return a valid JSON object. Do not include any explanations or markdown ticks (`
             print(f"Gemini Analysis Error: {e}")
             return {"全体": 0, "reason_summary": "AI分析エラー"}
 
-    def analyze_individual_stock(self, ticker: str, profile: str, finance_text: str) -> str:
+    def analyze_individual_stock(self, ticker: str, profile: str, finance_text: str, reference_date: str = None) -> str:
         """
         Analyze individual stock performance based on profile and financial data.
         Returns a roughly 150-character summary.
@@ -139,7 +140,7 @@ Return a valid JSON object. Do not include any explanations or markdown ticks (`
             return "AI機能が無効です。"
 
         from datetime import datetime
-        today_str = datetime.now().strftime('%Y/%m/%d')
+        today_str = reference_date if reference_date else datetime.now().strftime('%Y/%m/%d')
 
         prompt = f"""
 あなたはプロの証券アナリストです。

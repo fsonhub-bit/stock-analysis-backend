@@ -43,7 +43,7 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-def analyze_ticker(ticker: str, df: pd.DataFrame) -> AnalysisResult:
+def analyze_ticker(ticker: str, df: pd.DataFrame, timestamp: datetime = None) -> AnalysisResult:
     """
     Analyze ticker based on S-Stock logic:
     1. Trend Check (Close > 75SMA)
@@ -108,5 +108,5 @@ def analyze_ticker(ticker: str, df: pd.DataFrame) -> AnalysisResult:
         upside_ratio=float(latest['BB_Upper'] - latest['Close']) / latest['ATR'] if latest['ATR'] > 0 else 0.0,
         signal=signal,
         reason=reason,
-        timestamp=datetime.now()
+        timestamp=timestamp if timestamp else datetime.now()
     )

@@ -157,7 +157,25 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
+import argparse
+from datetime import datetime, timedelta
+
 async def main():
+    # Parse CLI Arguments
+    parser = argparse.ArgumentParser(description='Daily Stock Analysis Batch')
+    parser.add_argument('--date', type=str, help='Target execution date (YYYY-MM-DD)', default=None)
+    args = parser.parse_args()
+
+    # Determine Target Date
+    if args.date:
+        target_date_obj = datetime.strptime(args.date, '%Y-%m-%d')
+        today_str = args.date
+        print(f"🔄 Historical Execution Mode: Target Date = {today_str}")
+    else:
+        target_date_obj = datetime.now()
+        today_str = target_date_obj.strftime('%Y-%m-%d')
+        print(f"🚀 Daily Analysis Start: {today_str}")
+
     print(f"[{datetime.now()}] Starting Ultimate Daily Analysis...")
 
     # 1. Macro Analysis
@@ -166,7 +184,7 @@ async def main():
     risk_events = []
     
     try:
-        global_data = fetch_global_market_data() # Returns dict { "Name": {"price": ..., "change_pct": ...} }
+        global_data = fetch_global_market_data(target_date=target_date_obj) # Returns dict { "Name": {"price": ..., "change_pct": ...} }
         
         # Format Market Data for AI Prompt
         market_text_lines = []
@@ -180,7 +198,7 @@ async def main():
         headlines = macro_analyzer.fetch_news_headlines()
         
         # New call with text-based global data
-        ai_response = macro_analyzer.analyze_macro_market(market_text, headlines)
+        ai_response = macro_analyzer.analyze_macro_market(market_text, headlines, reference_date=today_str)
         
         # Fallback for old format if AI hallucinates
         if "sector_scores" in ai_response:
@@ -236,7 +254,7 @@ async def main():
     try:
         # Fetch longer history for correlation (90d to be safe for 60d rolling)
         us_tickers = ["^SOX", "^IXIC", "^GSPC"]
-        us_data = yf.download(us_tickers, period="3mo", auto_adjust=True, threads=True)
+        us_data = yf.download(us_tickers, period="3mo", auto_adjust=True, threads=True, end=target_date_obj)
         # Handle MultiIndex
         for ticker in us_tickers:
             if isinstance(us_data.columns, pd.MultiIndex):
@@ -277,7 +295,7 @@ async def main():
         
         try:
             # Fetch for SMA75 (needs ~6mo)
-            data = yf.download(chunk_tickers, period="6mo", group_by='ticker', auto_adjust=True, threads=True)
+            data = yf.download(chunk_tickers, period="6mo", group_by='ticker', auto_adjust=True, threads=True, end=target_date_obj)
             
             for ticker in chunk_tickers:
                 try:
@@ -447,7 +465,8 @@ async def main():
                                 perf_summary = macro_analyzer.analyze_individual_stock(
                                     ticker, 
                                     y_data["profile"], 
-                                    y_data.get("finance", "")
+                                    y_data.get("finance", ""),
+                                    reference_date=today_str
                                 )
                                 # Gemma 3 Limit is high (14400/day). 
                                 # A short sleep (2-3s) is polite for the scraper and API.
