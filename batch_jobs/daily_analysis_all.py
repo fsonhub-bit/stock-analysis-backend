@@ -160,6 +160,56 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
 import argparse
 from datetime import datetime, timedelta
 
+
+def calculate_exit_guideline(current_price, atr, sma5, earnings_date_str):
+    """
+    AGGRESSIVE銘柄用の出口戦略テキストを生成する
+    """
+    try:
+        # 1. Hard Stop Calculation (2xATR)
+        if atr is None or pd.isna(atr):
+            atr = 0
+        stop_loss_price = int(current_price - (2.0 * atr))
+        
+        # 2. SMA5 Line (Trailing target)
+        if sma5 is None or pd.isna(sma5):
+            sma5_price = 0
+        else:
+            sma5_price = int(sma5)
+        
+        # 3. Earnings Check
+        earnings_msg = ""
+        if earnings_date_str:
+            try:
+                # Remove whitespace and Handle formatting
+                e_str = str(earnings_date_str).strip()
+                # Try parsing formats
+                for fmt in ["%Y-%m-%d", "%Y/%m/%d"]:
+                    try:
+                        e_date = datetime.strptime(e_str, fmt).date()
+                        today = datetime.now().date()
+                        days_until = (e_date - today).days
+                        
+                        if 0 <= days_until <= 3:
+                            earnings_msg = f"[DANGER] 決算まであと{days_until}日! 持ち越し厳禁."
+                        elif 4 <= days_until <= 7:
+                            earnings_msg = f"[WARNING] 決算が近い({days_until}日後). "
+                        break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass # Date parse fail
+
+        # 4. Format Generation
+        guideline = f"STOP:{stop_loss_price} | TRAIL:SMA5({sma5_price})"
+        if earnings_msg:
+            guideline += f" | MSG:{earnings_msg}"
+            
+        return guideline
+    except Exception as e:
+        print(f"Error calculating exit guideline: {e}")
+        return ""
+
 async def main():
     # Parse CLI Arguments
     parser = argparse.ArgumentParser(description='Daily Stock Analysis Batch')
@@ -477,6 +527,16 @@ async def main():
                         except Exception as e:
                             print(f"    Data Fetch Failed for {ticker}: {e}")
                     
+                    # --- Exit Guideline Calculation ---
+                    exit_guide = ""
+                    if signal == "AGGRESSIVE":
+                        exit_guide = calculate_exit_guideline(
+                            current_price=close,
+                            atr=atr,
+                            sma5=row['SMA5'],
+                            earnings_date_str=earnings_date
+                        )
+
                     # Upside calc
                     upside_ratio = (row['BB_Upper'] - close) / atr if atr > 0 else 0
                     
@@ -513,6 +573,12 @@ async def main():
     # 5. DB Upsert
     print(f">>> 5. Saving {len(results_to_insert)} records to DB...")
     if results_to_insert:
+        # Debug / Verification: Print first record to check payload structure
+        print(f"    📝 Sample Payload (First Record):")
+        print(f"       Ticker: {results_to_insert[0]['ticker']}")
+        print(f"       Date: {results_to_insert[0]['date']}")
+        print(f"       Exit Guideline: {results_to_insert[0].get('exit_guideline', 'N/A')}")
+        
         db_chunk_size = 500
         for i in range(0, len(results_to_insert), db_chunk_size):
             chunk = results_to_insert[i:i + db_chunk_size]
